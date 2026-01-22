@@ -29,7 +29,7 @@ const register = async (req, res) => {
     res.status(201).json({
       token,
       user: {
-        id: user._id,
+        _id: user._id,
         name,
         email,
         role: user.role,
@@ -64,7 +64,7 @@ const login = async (req, res) => {
         return res.json({
           token,
           user: {
-            id: user._id,
+            _id: user._id,
             name: user.name,
             email: user.email,
             role: user.role,
@@ -75,7 +75,7 @@ const login = async (req, res) => {
             createdAt: user.createdAt,
           },
         });
-      } catch (error) {}
+      } catch (error) { }
     }
 
     if (!email || !password) {
@@ -106,7 +106,7 @@ const login = async (req, res) => {
     res.json({
       token,
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email,
         role: user.role,
