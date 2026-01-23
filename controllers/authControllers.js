@@ -202,4 +202,42 @@ const verifyEmail = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, verifyEmail };
+const testEmailConfig = async (req, res) => {
+  try {
+    const nodemailer = require('nodemailer');
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    try {
+      await transporter.verify();
+      res.json({
+        message: "✅ SMTP Connection Successful!",
+        config: {
+          user: process.env.EMAIL_USER ? `${process.env.EMAIL_USER.substring(0, 3)}***` : "MISSING",
+          pass: process.env.EMAIL_PASS ? "PRESENT" : "MISSING",
+        }
+      });
+    } catch (verifyError) {
+      res.status(500).json({
+        message: "❌ SMTP Connection Failed",
+        error: verifyError.message,
+        code: verifyError.code,
+        fullError: verifyError,
+        config: {
+          user: process.env.EMAIL_USER ? `${process.env.EMAIL_USER.substring(0, 3)}***` : "MISSING",
+          pass: process.env.EMAIL_PASS ? "PRESENT" : "MISSING",
+        }
+      });
+    }
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+module.exports = { register, login, getMe, verifyEmail, testEmailConfig };
