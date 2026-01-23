@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const { generateToken } = require("../utils/jwt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const sendEmail = require("../utils/sendEmail");
 
 const register = async (req, res) => {
   try {
@@ -15,28 +17,50 @@ const register = async (req, res) => {
       return res.status(400).json({ message: "Email already in use" });
     }
 
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+
     const user = new User({
       name,
       email,
       password,
       role: "admin",
+      verificationToken,
+      isVerified: false,
     });
 
     await user.save();
 
-    const token = generateToken(user);
+    const verificationUrl = process.env.FRONTEND_URL
+      ? `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`
+      : `http://localhost:5173/verify-email?token=${verificationToken}`;
 
-    res.status(201).json({
-      token,
-      user: {
-        _id: user._id,
-        name,
-        email,
-        role: user.role,
-        profilePicture: user.profilePicture,
-        createdAt: user.createdAt,
-      },
-    });
+    const message = `
+      <h1>Email Verification</h1>
+      <p>Please click the link below to verify your email:</p>
+      <a href="${verificationUrl}">${verificationUrl}</a>
+    `;
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Verify your email",
+        html: message,
+      });
+
+      res.status(201).json({
+        message: "Registration successful! Please check your email to verify your account.",
+      });
+
+    } catch (emailError) {
+      console.error("Email send error:", emailError);
+
+      await User.findByIdAndDelete(user._id);
+
+      res.status(500).json({
+        message: "Registration cancelled. Email sending failed. Please check your email configuration or contact admin."
+      });
+    }
+
   } catch (error) {
     console.error("Registration error:", error);
     res.status(500).json({ message: error.message });
@@ -97,6 +121,10 @@ const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    if (!user.isVerified) {
+      return res.status(401).json({ message: "Please verify your email to login" });
+    }
+
     if (!user.isActive) {
       return res.status(401).json({ message: "You are deactivated by admin" });
     }
@@ -133,4 +161,45 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe };
+const verifyEmail = async (req, res) => {
+  try {
+    const { token: verificationToken } = req.body;
+
+    if (!verificationToken) {
+      return res.status(400).json({ message: "Verification token is required" });
+    }
+
+    const user = await User.findOne({ verificationToken });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid verification token" });
+    }
+
+    user.isVerified = true;
+    user.verificationToken = undefined;
+    await user.save();
+
+    const token = generateToken(user);
+
+    res.status(200).json({
+      message: "Email verified successfully",
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        teams: user.teams,
+        managedTeams: user.managedTeams,
+        managedTasks: user.managedTasks,
+        profilePicture: user.profilePicture,
+        createdAt: user.createdAt,
+      }
+    });
+  } catch (error) {
+    console.error("Verification error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { register, login, getMe, verifyEmail };
