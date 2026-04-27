@@ -1,16 +1,18 @@
 const User = require("../models/User");
 const ActivityLog = require("../models/ActivityLog");
+const crypto = require("crypto");
+const sendEmail = require("../utils/mail");
 
 const getUsers = async (req, res) => {
   try {
     let users;
     if (req.user.role === "admin") {
       users = await User.find({ adminId: req.user._id }).select(
-        "name email role createdAt profilePicture isActive"
+        "name email role createdAt profilePicture isActive",
       );
     } else if (req.user.role === "manager") {
       users = await User.find({ adminId: req.user.adminId }).select(
-        "name email role createdAt profilePicture isActive"
+        "name email role createdAt profilePicture isActive",
       );
     } else {
       users = [];
@@ -41,7 +43,7 @@ const updateUserProfile = async (req, res) => {
             (error, result) => {
               if (error) reject(error);
               else resolve(result);
-            }
+            },
           );
           uploadStream.end(req.file.buffer);
         });
@@ -98,13 +100,14 @@ const createSubUser = async (req, res) => {
       return res.status(400).json({ message: "Email already in use" });
     }
 
+    const verificationToken = crypto.randomBytes(32).toString("hex");
     const user = new User({
       name,
       email,
       password,
       role,
-      role,
       adminId: req.user._id,
+      verificationToken,
     });
 
     if (req.file) {
@@ -115,7 +118,7 @@ const createSubUser = async (req, res) => {
           (error, result) => {
             if (error) reject(error);
             else resolve(result);
-          }
+          },
         );
         uploadStream.end(req.file.buffer);
       });
@@ -124,14 +127,42 @@ const createSubUser = async (req, res) => {
 
     await user.save();
 
-    res.status(201).json({
-      id: user._id,
-      name,
-      email,
-      role,
-      profilePicture: user.profilePicture,
-      createdAt: user.createdAt,
-    });
+    const verificationUrl = `http://${process.env.BASE_URL}/api/auth/verify/${verificationToken}`;
+
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Verify Your Email - TMS Portal",
+        template: "verificationEmail.ejs",
+        data: {
+          name: user.name,
+          verificationUrl,
+        },
+      });
+
+      res.status(201).json({
+        id: user._id,
+        message:
+          "User created successfully! A verification email has been sent.",
+        name,
+        email,
+        role,
+        profilePicture: user.profilePicture,
+        createdAt: user.createdAt,
+      });
+    } catch (mailError) {
+      console.error("Mail error:", mailError);
+      res.status(201).json({
+        id: user._id,
+        message:
+          "User created successfully, but there was an error sending the verification email.",
+        name,
+        email,
+        role,
+        profilePicture: user.profilePicture,
+        createdAt: user.createdAt,
+      });
+    }
   } catch (error) {
     console.error("Create sub-user error:", error);
     res.status(500).json({ message: error.message });
@@ -145,7 +176,9 @@ const updateSubUser = async (req, res) => {
 
     const userToUpdate = await User.findOne({ _id: id, adminId: req.user._id });
     if (!userToUpdate) {
-      return res.status(404).json({ message: "User not found or unauthorized" });
+      return res
+        .status(404)
+        .json({ message: "User not found or unauthorized" });
     }
 
     if (name) userToUpdate.name = name;
@@ -165,7 +198,7 @@ const updateSubUser = async (req, res) => {
           (error, result) => {
             if (error) reject(error);
             else resolve(result);
-          }
+          },
         );
         uploadStream.end(req.file.buffer);
       });
@@ -197,17 +230,28 @@ const toggleUserStatus = async (req, res) => {
     const { id } = req.params;
     const user = await User.findOne({ _id: id, adminId: req.user._id });
     if (!user) {
-      return res.status(404).json({ message: "User not found or unauthorized" });
+      return res
+        .status(404)
+        .json({ message: "User not found or unauthorized" });
     }
 
     user.isActive = !user.isActive;
     await user.save();
 
-    res.json({ message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`, isActive: user.isActive });
+    res.json({
+      message: `User ${user.isActive ? "activated" : "deactivated"} successfully`,
+      isActive: user.isActive,
+    });
   } catch (error) {
     console.error("Toggle user status error:", error);
     res.status(500).json({ message: error.message });
   }
 };
 
-module.exports = { getUsers, updateUserProfile, createSubUser, updateSubUser, toggleUserStatus };
+module.exports = {
+  getUsers,
+  updateUserProfile,
+  createSubUser,
+  updateSubUser,
+  toggleUserStatus,
+};

@@ -1,6 +1,9 @@
 const User = require("../models/User");
 const { generateToken } = require("../utils/jwt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const sendEmail = require("../utils/mail");
+const path = require("path");
 
 const register = async (req, res) => {
   try {
@@ -15,30 +18,136 @@ const register = async (req, res) => {
       return res.status(400).json({ message: "Email already in use" });
     }
 
+    const verificationToken = crypto.randomBytes(32).toString("hex");
     const user = new User({
       name,
       email,
       password,
       role: "admin",
+      verificationToken,
     });
 
+    console.log("User registered with token:", verificationToken);
     await user.save();
 
-    const token = generateToken(user);
+    const verificationUrl = `http://${process.env.BASE_URL}/api/auth/verify/${verificationToken}`;
 
-    res.status(201).json({
-      token,
-      user: {
-        _id: user._id,
-        name,
-        email,
-        role: user.role,
-        profilePicture: user.profilePicture,
-        createdAt: user.createdAt,
-      },
-    });
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Verify Your Email - TMS Portal",
+        template: "verificationEmail.ejs",
+        data: {
+          name: user.name,
+          verificationUrl,
+        },
+      });
+
+      res.status(201).json({
+        message:
+          "Registration successful! Please check your email to verify your account.",
+        user: {
+          _id: user._id,
+          name,
+          email,
+          role: user.role,
+        },
+      });
+    } catch (mailError) {
+      console.error("Mail error:", mailError);
+      res.status(201).json({
+        message:
+          "Registration successful, but there was an error sending the verification email. Please contact support.",
+        user: {
+          _id: user._id,
+          name,
+          email,
+          role: user.role,
+        },
+      });
+    }
   } catch (error) {
     console.error("Registration error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.params;
+    console.log("Attempting to verify token:", token);
+
+    const user = await User.findOne({ verificationToken: token });
+    console.log("User found:", user ? user.email : "none");
+
+    if (!user) {
+      return res.render("emails/verificationMessage", {
+        title: "Link Expired",
+        message:
+          "This verification link is invalid or has already been used. Please try logging in or enter your email below to resend the verification link.",
+        showResend: true,
+      });
+    }
+
+    user.isVerified = true;
+    user.verificationToken = null;
+    await user.save();
+
+    // Generate token for auto-login
+    const autoLoginToken = generateToken(user);
+
+    // Redirect to frontend with token
+    res.redirect(
+      `http://localhost:5173/login?token=${autoLoginToken}&verified=true`,
+    );
+  } catch (error) {
+    console.error("Verification error:", error);
+    res.status(500).render("emails/verificationMessage", {
+      title: "Error",
+      message: "An unexpected error occurred. Please try again later.",
+      showResend: false,
+    });
+  }
+};
+
+const resendVerification = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ message: "Email is already verified" });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString("hex");
+    user.verificationToken = verificationToken;
+    await user.save();
+
+    const verificationUrl = `http://${process.env.BASE_URL}/api/auth/verify/${verificationToken}`;
+
+    await sendEmail({
+      email: user.email,
+      subject: "Verify Your Email - TMS Portal",
+      template: "verificationEmail.ejs",
+      data: {
+        name: user.name,
+        verificationUrl,
+      },
+    });
+
+    res.json({
+      message:
+        "Verification email resent successfully! Please check your inbox.",
+    });
+  } catch (error) {
+    console.error("Resend verification error:", error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -75,7 +184,7 @@ const login = async (req, res) => {
             createdAt: user.createdAt,
           },
         });
-      } catch (error) { }
+      } catch (error) {}
     }
 
     if (!email || !password) {
@@ -95,6 +204,12 @@ const login = async (req, res) => {
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    if (!user.isVerified) {
+      return res
+        .status(401)
+        .json({ message: "Please verify your email to login" });
     }
 
     if (!user.isActive) {
@@ -133,4 +248,4 @@ const getMe = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe };
+module.exports = { register, login, getMe, verifyEmail, resendVerification };

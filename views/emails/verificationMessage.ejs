@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Verification</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #f1f5f9;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #1e293b;
+        }
+
+        .card {
+            background: white;
+            padding: 50px;
+            border-radius: 30px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 450px;
+            width: 90%;
+        }
+
+        .icon {
+            width: 80px;
+            height: 80px;
+            background: #ffe4e6;
+            color: #e11d48;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            margin: 0 auto 25px;
+        }
+
+        h1 {
+            margin: 0 0 15px;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        p {
+            color: #64748b;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            display: block;
+            padding: 14px;
+            background: #64748b;
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="icon">!</div>
+        <h1>
+            <%= title %>
+        </h1>
+        <p>
+            <%= message %>
+        </p>
+        <a href="http://localhost:5173/login" class="btn">Back to Login</a>
+
+        <% if (locals.showResend) { %>
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+                <p style="margin-bottom: 15px; font-size: 14px;">Didn't receive the email? Enter your email to resend.
+                </p>
+                <form id="resend-form" style="display: flex; flex-direction: column; gap: 10px;">
+                    <input type="email" id="email" placeholder="Your Email address" required
+                        style="padding: 12px; border: 1.5px solid #e2e8f0; border-radius: 10px; font-family: inherit; font-size: 14px; outline: none; transition: border-color 0.2s;">
+                    <button type="submit" id="resend-btn" class="btn"
+                        style="border: none; cursor: pointer; background: #2563eb;">Resend Verification Link</button>
+                </form>
+                <div id="status-message" style="margin-top: 15px; font-size: 14px; font-weight: 500;"></div>
+            </div>
+
+            <script>
+                document.getElementById('resend-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const email = document.getElementById('email').value;
+                    const btn = document.getElementById('resend-btn');
+                    const status = document.getElementById('status-message');
+
+                    btn.disabled = true;
+                    btn.innerText = 'Sending...';
+                    status.innerText = '';
+
+                    try {
+                        const response = await fetch('/api/auth/resend-verification', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email })
+                        });
+                        const data = await response.json();
+
+                        if (response.ok) {
+                            status.style.color = '#16a34a';
+                            status.innerText = data.message;
+                            document.getElementById('email').value = '';
+                        } else {
+                            status.style.color = '#dc2626';
+                            status.innerText = data.message;
+                        }
+                    } catch (error) {
+                        status.style.color = '#dc2626';
+                        status.innerText = 'Something went wrong. Please try again.';
+                    } finally {
+                        btn.disabled = false;
+                        btn.innerText = 'Resend Verification Link';
+                    }
+                });
+            </script>
+            <% } %>
+    </div>
+</body>
+
+</html>
