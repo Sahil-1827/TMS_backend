@@ -34,7 +34,7 @@ const createTask = async (req, res, io, connectedUsers) => {
     let logDetails = `Task "${task.title}" was created`;
     if (assignees && assignees.length > 0) {
       const assignedUsers = await User.find({ _id: { $in: assignees } });
-      const userNames = assignedUsers.map(u => u.name).join(", ");
+      const userNames = assignedUsers.map((u) => u.name).join(", ");
       logDetails += ` and assigned to ${userNames}`;
     } else if (team) {
       const assignedTeam = await Team.findById(team);
@@ -57,12 +57,12 @@ const createTask = async (req, res, io, connectedUsers) => {
       .populate({
         path: "team",
         select: "name members",
-        populate: { path: "members", select: "name email profilePicture" }
+        populate: { path: "members", select: "name email profilePicture" },
       })
       .populate("createdBy", "name email profilePicture");
 
     if (assignees && assignees.length > 0) {
-      assignees.forEach(assigneeId => {
+      assignees.forEach((assigneeId) => {
         if (connectedUsers.has(assigneeId.toString())) {
           io.to(assigneeId.toString()).emit("taskAssigned", {
             task: populatedTask,
@@ -75,11 +75,11 @@ const createTask = async (req, res, io, connectedUsers) => {
     if (team) {
       const teamData = await Team.findById(team).populate(
         "members",
-        "name email"
+        "name email",
       );
       if (teamData) {
         const teamMembers = teamData.members.map((member) =>
-          member._id.toString()
+          member._id.toString(),
         );
         teamMembers.forEach((userId) => {
           if (connectedUsers.has(userId)) {
@@ -106,7 +106,7 @@ const addTaskLink = async (req, res) => {
 
     const task = await Task.findById(id);
     if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
+      return res.status(404).json({ message: "Task not found" });
     }
 
     task.links.push({ title, url });
@@ -124,10 +124,10 @@ const removeTaskLink = async (req, res) => {
 
     const task = await Task.findById(id);
     if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
+      return res.status(404).json({ message: "Task not found" });
     }
 
-    task.links = task.links.filter(link => link._id.toString() !== linkId);
+    task.links = task.links.filter((link) => link._id.toString() !== linkId);
     await task.save();
 
     res.json(task.links);
@@ -153,7 +153,8 @@ const getTasks = async (req, res) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const rootAdminId = req.user.role === "admin" ? req.user._id : req.user.adminId;
+    const rootAdminId =
+      req.user.role === "admin" ? req.user._id : req.user.adminId;
     const queryConditions = [{ adminId: rootAdminId }];
 
     if (req.user.role === "manager") {
@@ -162,7 +163,7 @@ const getTasks = async (req, res) => {
       // });
     } else if (req.user.role === "user") {
       const userTeams = await Team.find({ members: req.user._id }).select(
-        "_id"
+        "_id",
       );
       const teamIds = userTeams.map((team) => team._id);
       queryConditions.push({
@@ -205,25 +206,25 @@ const getTasks = async (req, res) => {
       .populate({
         path: "team",
         select: "name description members",
-        populate: { path: "members", select: "name email profilePicture" }
+        populate: { path: "members", select: "name email profilePicture" },
       })
       .populate("createdBy", "name email profilePicture")
       .sort(sort)
       .skip(skip)
       .limit(limitNum);
 
-    const taskIds = tasks.map(t => t._id);
+    const taskIds = tasks.map((t) => t._id);
     const commentCounts = await Comment.aggregate([
       { $match: { task: { $in: taskIds } } },
-      { $group: { _id: "$task", count: { $sum: 1 } } }
+      { $group: { _id: "$task", count: { $sum: 1 } } },
     ]);
 
     const countMap = {};
-    commentCounts.forEach(c => {
+    commentCounts.forEach((c) => {
       countMap[c._id.toString()] = c.count;
     });
 
-    const tasksWithCounts = tasks.map(task => {
+    const tasksWithCounts = tasks.map((task) => {
       const taskObj = task.toObject();
       taskObj.commentCount = countMap[task._id.toString()] || 0;
       return taskObj;
@@ -248,7 +249,7 @@ const getTaskById = async (req, res) => {
       .populate({
         path: "team",
         select: "name members",
-        populate: { path: "members", select: "name email profilePicture" }
+        populate: { path: "members", select: "name email profilePicture" },
       })
       .populate("createdBy", "name email profilePicture");
 
@@ -262,7 +263,9 @@ const getTaskById = async (req, res) => {
       task.team &&
       teamIds.some((teamId) => teamId.toString() === task.team._id.toString());
 
-    const isAssignee = task.assignees && task.assignees.some(a => a._id.toString() === req.user._id.toString());
+    const isAssignee =
+      task.assignees &&
+      task.assignees.some((a) => a._id.toString() === req.user._id.toString());
 
     if (
       req.user.role !== "admin" &&
@@ -300,6 +303,18 @@ const updateTask = async (req, res, io, connectedUsers) => {
         .json({ message: "Not authorized to update this task" });
     }
 
+    if (
+      task.status === "Done" &&
+      req.body.status &&
+      req.body.status !== "Done"
+    ) {
+      return res
+        .status(400)
+        .json({
+          message: "Task is already marked as Done and cannot be changed back.",
+        });
+    }
+
     if (assignees && assignees.length > 0 && team) {
       return res.status(400).json({
         message:
@@ -308,7 +323,9 @@ const updateTask = async (req, res, io, connectedUsers) => {
     }
 
     const oldTask = { ...task._doc };
-    const oldAssignees = oldTask.assignees ? oldTask.assignees.map(a => a.toString()) : [];
+    const oldAssignees = oldTask.assignees
+      ? oldTask.assignees.map((a) => a.toString())
+      : [];
     const oldTeam = oldTask.team ? oldTask.team.toString() : null;
 
     applyTaskUpdates(task, req.body, req.user);
@@ -332,14 +349,20 @@ const updateTask = async (req, res, io, connectedUsers) => {
       : "";
     if (oldDueDate !== newDueDate) {
       changes.push(
-        `due date from "${oldDueDate || "none"}" to "${newDueDate || "none"}"`
+        `due date from "${oldDueDate || "none"}" to "${newDueDate || "none"}"`,
       );
     }
 
-    const newAssignees = task.assignees ? task.assignees.map(a => a.toString()) : [];
+    const newAssignees = task.assignees
+      ? task.assignees.map((a) => a.toString())
+      : [];
 
-    const addedAssignees = newAssignees.filter(id => !oldAssignees.includes(id));
-    const removedAssignees = oldAssignees.filter(id => !newAssignees.includes(id));
+    const addedAssignees = newAssignees.filter(
+      (id) => !oldAssignees.includes(id),
+    );
+    const removedAssignees = oldAssignees.filter(
+      (id) => !newAssignees.includes(id),
+    );
 
     if (addedAssignees.length > 0) changes.push(`assigned new users`);
     if (removedAssignees.length > 0) changes.push(`removed some assignees`);
@@ -372,17 +395,14 @@ const updateTask = async (req, res, io, connectedUsers) => {
       .populate({
         path: "team",
         select: "name members",
-        populate: { path: "members", select: "name email profilePicture" }
+        populate: { path: "members", select: "name email profilePicture" },
       })
       .populate("createdBy", "name email profilePicture");
 
     const adminsAndManagers = await User.find({
       role: { $in: ["admin", "manager"] },
       _id: { $ne: req.user._id },
-      $or: [
-        { _id: task.adminId },
-        { adminId: task.adminId }
-      ]
+      $or: [{ _id: task.adminId }, { adminId: task.adminId }],
     });
     adminsAndManagers.forEach((user) => {
       if (connectedUsers.has(user._id.toString())) {
@@ -394,7 +414,7 @@ const updateTask = async (req, res, io, connectedUsers) => {
     });
 
     if (task.assignees && task.assignees.length > 0) {
-      task.assignees.forEach(assignee => {
+      task.assignees.forEach((assignee) => {
         if (
           assignee &&
           connectedUsers.has(assignee.toString()) &&
@@ -411,7 +431,7 @@ const updateTask = async (req, res, io, connectedUsers) => {
     if (task.team) {
       const teamData = await Team.findById(task.team).populate(
         "members",
-        "name email profilePicture"
+        "name email profilePicture",
       );
       if (teamData) {
         teamData.members.forEach((member) => {
@@ -428,7 +448,7 @@ const updateTask = async (req, res, io, connectedUsers) => {
       }
     }
 
-    addedAssignees.forEach(userId => {
+    addedAssignees.forEach((userId) => {
       if (connectedUsers.has(userId)) {
         io.to(userId).emit("taskAssigned", {
           task: populatedTask,
@@ -437,7 +457,7 @@ const updateTask = async (req, res, io, connectedUsers) => {
       }
     });
 
-    removedAssignees.forEach(userId => {
+    removedAssignees.forEach((userId) => {
       if (connectedUsers.has(userId)) {
         io.to(userId).emit("taskUnassigned", {
           taskId: task._id,
@@ -446,12 +466,11 @@ const updateTask = async (req, res, io, connectedUsers) => {
       }
     });
 
-
     if (newTeamId !== oldTeam) {
       if (newTeamId) {
         const newTeamData = await Team.findById(newTeamId).populate(
           "members",
-          "name email profilePicture"
+          "name email profilePicture",
         );
         if (newTeamData) {
           newTeamData.members.forEach((member) => {
@@ -467,7 +486,7 @@ const updateTask = async (req, res, io, connectedUsers) => {
       if (oldTeam) {
         const oldTeamData = await Team.findById(oldTeam).populate(
           "members",
-          "name email profilePicture"
+          "name email profilePicture",
         );
         if (oldTeamData) {
           oldTeamData.members.forEach((member) => {
@@ -507,7 +526,9 @@ const deleteTask = async (req, res, io, connectedUsers) => {
     }
 
     const taskTitle = task.title;
-    const assignees = task.assignees ? task.assignees.map(a => a.toString()) : [];
+    const assignees = task.assignees
+      ? task.assignees.map((a) => a.toString())
+      : [];
     const team = task.team?.toString();
 
     await ActivityLog.create({
@@ -522,7 +543,7 @@ const deleteTask = async (req, res, io, connectedUsers) => {
     await Task.deleteOne({ _id: req.params.id });
 
     if (assignees.length > 0) {
-      assignees.forEach(assigneeId => {
+      assignees.forEach((assigneeId) => {
         if (connectedUsers.has(assigneeId)) {
           io.to(assigneeId).emit("taskUnassigned", {
             taskId: req.params.id,
@@ -535,11 +556,11 @@ const deleteTask = async (req, res, io, connectedUsers) => {
     if (team) {
       const teamData = await Team.findById(team).populate(
         "members",
-        "name email"
+        "name email",
       );
       if (teamData) {
         const teamMembers = teamData.members.map((member) =>
-          member._id.toString()
+          member._id.toString(),
         );
         teamMembers.forEach((userId) => {
           if (connectedUsers.has(userId)) {
@@ -565,7 +586,7 @@ const getTaskStatsByPriority = async (req, res) => {
 
     if (req.user.role === "user") {
       const userTeams = await Team.find({ members: req.user._id }).select(
-        "_id"
+        "_id",
       );
       const teamIds = userTeams.map((team) => team._id);
       pipeline.push({
@@ -609,7 +630,8 @@ const getTaskStatsByPriority = async (req, res) => {
 const checkTaskUpdateAuth = async (user, task, updateData) => {
   const isCreator = task.createdBy.toString() === user._id.toString();
   const isAssignee =
-    task.assignees && task.assignees.some(a => a.toString() === user._id.toString());
+    task.assignees &&
+    task.assignees.some((a) => a.toString() === user._id.toString());
 
   let isTeamMember = false;
   let isTeamManager = false;
@@ -617,10 +639,10 @@ const checkTaskUpdateAuth = async (user, task, updateData) => {
     const teamData = await Team.findById(task.team);
     if (teamData) {
       isTeamMember = teamData.members.some(
-        (memberId) => memberId.toString() === user._id.toString()
+        (memberId) => memberId.toString() === user._id.toString(),
       );
       isTeamManager = teamData.managers.some(
-        (managerId) => managerId.toString() === user._id.toString()
+        (managerId) => managerId.toString() === user._id.toString(),
       );
     }
   }
@@ -672,5 +694,5 @@ module.exports = {
   deleteTask,
   getTaskStatsByPriority,
   addTaskLink,
-  removeTaskLink
+  removeTaskLink,
 };
